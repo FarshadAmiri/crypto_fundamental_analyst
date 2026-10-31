@@ -90,7 +90,6 @@ A fully dockerized vLLM also exists as an optional profile: `docker compose --pr
 ## Notes / gotchas
 
 - Reddit and Google-fronted services (e.g. HN Algolia) are blocked from some networks; the sentiment tool falls back automatically (Reddit → HN → CoinGecko trending).
-- A run that happens while vLLM is down is recorded as `failed` — restart vLLM and run again, nothing else breaks.
 - Past picks get `return_pct` filled in on the next weekly run — a free, naive backtest.
 - To reuse the MCP tools elsewhere (any MCP client), point it at `http://localhost:8001/mcp`.
 
