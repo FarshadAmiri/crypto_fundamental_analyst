@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Crypto Fundamental Analyst — Weekly Picks</title>
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: system-ui, sans-serif; background: #0e1116; color: #e6e6e6; margin: 0; padding: 2rem; }
+  h1 { font-size: 1.4rem; } h1 small { color: #8a8f98; font-weight: normal; }
+  .bar { display: flex; gap: 1rem; align-items: center; margin: 1rem 0; }
+  button { background: #2f81f7; color: white; border: 0; border-radius: 6px; padding: .5rem 1rem; cursor: pointer; }
+  button:disabled { background: #444; cursor: default; }
+  select, option { background: #161b22; color: #e6e6e6; border: 1px solid #30363d; border-radius: 6px; padding: .4rem; }
+  table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+  th, td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid #21262d; vertical-align: top; font-size: .92rem; }
+  th { color: #8a8f98; font-weight: 600; }
+  .pos { color: #3fb950; } .neg { color: #f85149; }
+  .muted { color: #8a8f98; }
+  #summary { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
+</style>
+</head>
+<body>
+<h1>Crypto Fundamental Analyst <small>— weekly picks</small></h1>
+
+<div class="bar">
+  <select id="runSelect"><option value="latest">Latest run</option></select>
+  <button id="runBtn" onclick="triggerRun()">▶ Run now</button>
+  <span id="status" class="muted"></span>
+</div>
+
+<div id="summary" style="display:none"></div>
+<table id="picksTable">
+  <thead><tr>
+    <th>#</th><th>Coin</th><th>Score</th><th>Conf.</th><th>Rationale</th><th>Main risk</th><th>Pick price</th><th>Now</th><th>Return</th>
+  </tr></thead>
+  <tbody></tbody>
+</table>
+
+<script>
+async function loadRuns() {
+  const runs = await (await fetch('/api/runs')).json();
+  const sel = document.getElementById('runSelect');
+  sel.innerHTML = '';
+  for (const r of runs) {
+    const opt = document.createElement('option');
+    opt.value = r.id;
+    opt.textContent = `Week ${r.week_start} — run #${r.id} (${r.status})`;
+    sel.appendChild(opt);
+  }
+  if (runs.length) loadPicks(runs[0].id); else { document.getElementById('status').textContent = 'No runs yet — click "Run now".'; }
+}
+
+async function loadPicks(runId) {
+  const picks = await (await fetch(`/api/picks/${runId}`)).json();
+  const runs = await (await fetch('/api/runs')).json();
+  const run = runs.find(r => r.id === runId) || {};
+  const sum = document.getElementById('summary');
+  if (run.summary) { sum.style.display = 'block'; sum.textContent = run.summary; }
+  const tbody = document.querySelector('#picksTable tbody');
+  tbody.innerHTML = '';
+  for (const p of picks) {
+    const ret = p.return_pct;
+    tbody.insertAdjacentHTML('beforeend', `<tr>
+      <td>${p.rank}</td><td><b>${p.symbol}</b> <span class="muted">${p.coin}</span></td>
+      <td>${p.score}</td><td>${p.confidence}</td>
+      <td>${p.rationale}</td><td>${p.risks}</td>
+      <td>${p.price_at_pick ?? '—'}</td><td>${p.price_latest ?? '—'}</td>
+      <td class="${ret == null ? 'muted' : ret >= 0 ? 'pos' : 'neg'}">${ret == null ? '—' : ret + '%'}</td>
+    </tr>`);
+  }
+}
+
+async function triggerRun() {
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  const resp = await fetch('/api/run', { method: 'POST' });
+  if (resp.ok) {
+    document.getElementById('status').textContent = 'Run started — this takes several minutes (data fetch + LLM passes).';
+    pollStatus();
+  } else {
+    document.getElementById('status').textContent = (await resp.json()).detail || 'Could not start run';
+    btn.disabled = false;
+  }
+}
+
+async function pollStatus() {
+  const timer = setInterval(async () => {
+    const s = await (await fetch('/api/status')).json();
+    if (!s.run_in_progress) {
+      clearInterval(timer);
+      document.getElementById('runBtn').disabled = false;
+      document.getElementById('status').textContent = 'Run finished.';
+      loadRuns();
+    }
+  }, 5000);
+}
+
+document.getElementById('runSelect').addEventListener('change', e => loadPicks(e.target.value));
+loadRuns();
+</script>
+</body>
+</html>

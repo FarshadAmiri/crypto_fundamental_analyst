@@ -1,0 +1,80 @@
+services:
+  # OPTIONAL: dockerized vLLM. Only starts with:  docker compose --profile docker-gpu up -d vllm
+  # If you run vLLM in WSL instead (default), skip this service and set VLLM_BASE_URL
+  # to http://host.docker.internal:<port>/v1 in .env
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: cfa-vllm
+    profiles: ["docker-gpu"]
+    volumes:
+      # Option A: local model folder mounted at /models (set VLLM_MODEL=/models)
+      # Option B: leave MODEL_DIR pointing at any folder and set VLLM_MODEL=<hf-repo-id>
+      #           to auto-download (cached in the hf-cache volume below)
+      - ${MODEL_DIR:-/models}:/models:ro
+      - hf-cache:/root/.cache/huggingface
+    command: >
+      --model ${VLLM_MODEL:-/models}
+      --served-model-name ${MODEL_NAME}
+      --max-model-len ${MAX_MODEL_LEN}
+      --gpu-memory-utilization 0.90
+      --enable-auto-tool-choice
+      --tool-call-parser hermes
+    ports:
+      - "8002:8000"   # optional: query vLLM directly from the host
+    shm_size: "1gb"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/models')"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 300s
+
+  mcp:
+    build: .
+    container_name: cfa-mcp
+    command: python -m app.mcp_server.server
+    environment:
+      MAX_ITEMS_PER_SOURCE: ${MAX_ITEMS_PER_SOURCE}
+      MAX_CHARS_PER_ITEM: ${MAX_CHARS_PER_ITEM}
+      FETCH_TIMEOUT_SECONDS: ${FETCH_TIMEOUT_SECONDS}
+      CACHE_TTL_HOURS: ${CACHE_TTL_HOURS}
+      LOOKBACK_DAYS: ${LOOKBACK_DAYS}
+    ports:
+      - "8001:8001"   # optional: inspect MCP tools from the host
+
+  app:
+    build: .
+    container_name: cfa-app
+    ports:
+      - "8000:8000"
+    environment:
+      # default assumes vLLM running in WSL on port 8002 (host.docker.internal works
+      # from Docker Desktop containers on Windows); override in .env if needed
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://host.docker.internal:8002/v1}
+      MCP_URL: http://mcp:8001/mcp
+      MODEL_NAME: ${MODEL_NAME}
+      DB_PATH: /data/app.db
+      SCHEDULER_DAY_OF_WEEK: ${SCHEDULER_DAY_OF_WEEK}
+      SCHEDULER_HOUR: ${SCHEDULER_HOUR}
+      MAX_ITEMS_PER_SOURCE: ${MAX_ITEMS_PER_SOURCE}
+      MAX_CHARS_PER_ITEM: ${MAX_CHARS_PER_ITEM}
+      FETCH_TIMEOUT_SECONDS: ${FETCH_TIMEOUT_SECONDS}
+      CACHE_TTL_HOURS: ${CACHE_TTL_HOURS}
+      LOOKBACK_DAYS: ${LOOKBACK_DAYS}
+      SHORTLIST_SIZE: ${SHORTLIST_SIZE}
+    volumes:
+      - app-data:/data
+    depends_on:
+      mcp:
+        condition: service_started
+
+volumes:
+  app-data:
+  hf-cache:
