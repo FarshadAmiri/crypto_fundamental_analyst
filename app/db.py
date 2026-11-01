@@ -1,4 +1,5 @@
 """SQLite persistence. The API process owns the DB; runs are recorded weekly with picks and performance tracking."""
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -46,22 +47,28 @@ def init_db():
             );
             """
         )
+        # migrations for pre-trace databases
+        cols = [r[1] for r in c.execute("PRAGMA table_info(runs)").fetchall()]
+        if "settings" not in cols:
+            c.execute("ALTER TABLE runs ADD COLUMN settings TEXT")
+        if "trace" not in cols:
+            c.execute("ALTER TABLE runs ADD COLUMN trace TEXT")
 
 
-def start_run(week_start: str) -> int:
+def start_run(week_start: str, settings: str | None = None) -> int:
     with get_conn() as c:
         cur = c.execute(
-            "INSERT INTO runs (week_start, status, created_at) VALUES (?, 'running', ?)",
-            (week_start, datetime.now(timezone.utc).isoformat()),
+            "INSERT INTO runs (week_start, status, created_at, settings) VALUES (?, 'running', ?, ?)",
+            (week_start, datetime.now(timezone.utc).isoformat(), settings),
         )
         return cur.lastrowid
 
 
-def finish_run(run_id: int, status: str, summary: str = "", error: str = ""):
+def finish_run(run_id: int, status: str, summary: str = "", error: str = "", trace: str | None = None):
     with get_conn() as c:
         c.execute(
-            "UPDATE runs SET status=?, summary=?, error=? WHERE id=?",
-            (status, summary, error, run_id),
+            "UPDATE runs SET status=?, summary=?, error=?, trace=? WHERE id=?",
+            (status, summary, error, trace, run_id),
         )
 
 
@@ -105,7 +112,8 @@ def update_previous_picks_performance(prices: dict[str, float]):
 def list_runs(limit: int = 20) -> list[dict]:
     with get_conn() as c:
         rows = c.execute(
-            "SELECT id, week_start, status, summary, created_at, error FROM runs ORDER BY id DESC LIMIT ?",
+            """SELECT id, week_start, status, summary, created_at, error, settings
+               FROM runs ORDER BY id DESC LIMIT ?""",
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -125,6 +133,22 @@ def latest_completed_run() -> dict | None:
             "SELECT id FROM runs WHERE status='completed' ORDER BY id DESC LIMIT 1"
         ).fetchone()
         return dict(row) if row else None
+
+
+def get_run(run_id: int) -> dict | None:
+    with get_conn() as c:
+        row = c.execute("SELECT * FROM runs WHERE id=?", (run_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_trace(run_id: int) -> dict | None:
+    run = get_run(run_id)
+    if not run or not run.get("trace"):
+        return None
+    try:
+        return json.loads(run["trace"])
+    except Exception:
+        return None
 
 
 def is_run_in_progress() -> bool:

@@ -2,41 +2,305 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Crypto Fundamental Analyst — Weekly Picks</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crypto Fundamental Analyst</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>">
 <style>
-  :root { color-scheme: dark; }
-  body { font-family: system-ui, sans-serif; background: #0e1116; color: #e6e6e6; margin: 0; padding: 2rem; }
-  h1 { font-size: 1.4rem; } h1 small { color: #8a8f98; font-weight: normal; }
-  .bar { display: flex; gap: 1rem; align-items: center; margin: 1rem 0; }
-  button { background: #2f81f7; color: white; border: 0; border-radius: 6px; padding: .5rem 1rem; cursor: pointer; }
-  button:disabled { background: #444; cursor: default; }
-  select, option { background: #161b22; color: #e6e6e6; border: 1px solid #30363d; border-radius: 6px; padding: .4rem; }
-  table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
-  th, td { text-align: left; padding: .5rem .7rem; border-bottom: 1px solid #21262d; vertical-align: top; font-size: .92rem; }
-  th { color: #8a8f98; font-weight: 600; }
-  .pos { color: #3fb950; } .neg { color: #f85149; }
-  .muted { color: #8a8f98; }
-  #summary { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
+  :root {
+    --bg: #0b0e14; --panel: #12161f; --panel2: #171c27; --border: #232a38;
+    --text: #e2e6ee; --muted: #8a93a6; --accent: #4d8dff; --accent2: #7c5cff;
+    --green: #34d399; --red: #f87171; --amber: #fbbf24;
+    font-size: 15px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  header { display: flex; align-items: center; gap: 14px; padding: 14px 26px;
+           border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 1.05rem; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  header h1 span { color: var(--muted); font-weight: 400; }
+  .spacer { flex: 1; }
+  .pill { font-size: .78rem; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+  .pill.running { color: var(--amber); border-color: var(--amber); animation: pulse 1.4s infinite; }
+  .pill.idle { color: var(--green); border-color: var(--green); }
+  @keyframes pulse { 50% { opacity: .45; } }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 22px 26px 60px; }
+  .layout { display: grid; grid-template-columns: 300px 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+  .card h2 { font-size: .82rem; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin: 0 0 14px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 5px; }
+  input[type=text] { width: 100%; background: var(--panel2); border: 1px solid var(--border);
+    color: var(--text); border-radius: 8px; padding: 8px 10px; font-size: .88rem; }
+  input[type=text]:focus { outline: none; border-color: var(--accent); }
+  .hint { font-size: .72rem; color: var(--muted); margin-top: 4px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .rangeval { font-size: .8rem; color: var(--text); }
+
+  .seg { display: flex; gap: 4px; background: var(--panel2); border: 1px solid var(--border);
+         border-radius: 8px; padding: 3px; }
+  .seg button { flex: 1; background: transparent; border: 0; color: var(--muted); font-size: .78rem;
+                padding: 6px 4px; border-radius: 6px; cursor: pointer; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .segdesc { font-size: .72rem; color: var(--muted); margin-top: 5px; min-height: 26px; }
+
+  .srcgroup { font-size: .74rem; color: var(--muted); margin: 10px 0 4px; text-transform: uppercase; letter-spacing: .5px; }
+  .chk { display: flex; align-items: center; gap: 8px; font-size: .85rem; padding: 3px 0; cursor: pointer; }
+  .chk input { accent-color: var(--accent); }
+  button.primary { background: var(--accent); color: #fff; border: 0; border-radius: 9px;
+    padding: 10px 22px; font-size: .9rem; font-weight: 600; cursor: pointer; }
+  button.primary:disabled { background: #2a3242; color: var(--muted); cursor: default; }
+  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 8px; padding: 6px 12px; font-size: .78rem; cursor: pointer; }
+  button.ghost:hover { color: var(--text); border-color: var(--accent); }
+
+  .runbar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  select { background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 8px 10px; font-size: .85rem; max-width: 340px; }
+
+  table { border-collapse: collapse; width: 100%; }
+  th { text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .6px;
+       color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 11px 10px; border-bottom: 1px solid var(--border); font-size: .87rem; vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  .sym { font-weight: 700; font-size: .95rem; }
+  .coinname { color: var(--muted); font-size: .78rem; }
+  .scorebar { display: inline-block; width: 64px; height: 6px; background: var(--panel2);
+              border-radius: 3px; overflow: hidden; vertical-align: middle; margin-right: 6px; }
+  .scorebar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+  .chip { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: .76rem; font-weight: 600; }
+  .chip.pos { background: rgba(52,211,153,.13); color: var(--green); }
+  .chip.neg { background: rgba(248,113,113,.13); color: var(--red); }
+  .chip.mut { background: var(--panel2); color: var(--muted); }
+  .rationale { max-width: 420px; }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; font-size: .9rem; }
+  #summary { background: var(--panel2); border-left: 3px solid var(--accent); border-radius: 8px;
+             padding: 12px 16px; font-size: .88rem; color: #c8cede; margin-bottom: 16px; line-height: 1.5; }
+
+  /* modal */
+  .overlay { position: fixed; inset: 0; background: rgba(4,6,10,.72); display: none;
+             align-items: flex-start; justify-content: center; z-index: 50; padding: 4vh 16px; }
+  .overlay.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+           width: 900px; max-width: 100%; max-height: 90vh; overflow-y: auto; padding: 22px 24px; }
+  .modal h3 { margin: 0 0 4px; font-size: 1.05rem; }
+  .modal .sub { color: var(--muted); font-size: .8rem; margin-bottom: 18px; }
+  .mhead { display: flex; align-items: center; gap: 10px; }
+  .mhead .spacer { flex: 1; }
+  .xbtn { background: none; border: 0; color: var(--muted); font-size: 1.3rem; cursor: pointer; }
+  .xbtn:hover { color: var(--text); }
+
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+  .stepchip { font-size: .74rem; padding: 5px 11px; border-radius: 999px;
+              background: var(--panel2); border: 1px solid var(--border); color: var(--muted); }
+  .stepchip b { color: var(--text); font-weight: 600; }
+  .stepchip.ok { border-color: rgba(52,211,153,.4); }
+  .stepchip.bad { border-color: rgba(248,113,113,.5); color: var(--red); }
+  .stepchip .dur { color: var(--accent); margin-left: 5px; }
+
+  details { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px;
+            background: var(--panel2); }
+  summary { cursor: pointer; padding: 11px 14px; font-size: .87rem; font-weight: 600; list-style: none;
+            display: flex; align-items: center; gap: 8px; }
+  summary::before { content: '▸'; color: var(--muted); transition: transform .15s; }
+  details[open] summary::before { transform: rotate(90deg); }
+  summary .cnt { color: var(--muted); font-weight: 400; font-size: .76rem; }
+  .dbody { padding: 2px 16px 14px; font-size: .83rem; }
+  .srcrow { padding: 7px 0; border-bottom: 1px dashed var(--border); }
+  .srcrow:last-child { border-bottom: 0; }
+  .srcrow .u { color: var(--muted); font-size: .74rem; word-break: break-all; }
+  .tag { font-size: .68rem; padding: 1px 7px; border-radius: 5px; margin-left: 6px; }
+  .tag.ok { background: rgba(52,211,153,.13); color: var(--green); }
+  .tag.fail { background: rgba(248,113,113,.13); color: var(--red); }
+  .tag.skip { background: var(--panel); color: var(--muted); }
+  .srclist { margin: 5px 0 0 14px; padding: 0; list-style: none; }
+  .srclist li { padding: 2px 0; color: #b9c1d2; }
+  .bubble { border-left: 3px solid var(--accent2); background: var(--panel); border-radius: 8px;
+            padding: 10px 14px; margin: 10px 0; white-space: pre-wrap; line-height: 1.55; }
+  .bubble .who { font-weight: 700; font-size: .8rem; color: var(--accent2); display: block; margin-bottom: 5px; }
+  .repcard { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin: 8px 0; background: var(--panel); }
+  .repcard .hd { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; }
+  .repcard .kv { color: #b9c1d2; line-height: 1.5; }
+  .repcard .kv b { color: var(--text); }
+  .errline { color: var(--red); font-size: .8rem; }
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 20px; border-radius: 10px; font-size: .85rem; display: none; z-index: 99; }
 </style>
 </head>
 <body>
-<h1>Crypto Fundamental Analyst <small>— weekly picks</small></h1>
 
-<div class="bar">
-  <select id="runSelect"><option value="latest">Latest run</option></select>
-  <button id="runBtn" onclick="triggerRun()">▶ Run now</button>
-  <span id="status" class="muted"></span>
+<header>
+  <h1>Crypto Fundamental Analyst <span>· weekly picks via local LLM</span></h1>
+  <div class="spacer"></div>
+  <div id="statusPill" class="pill">…</div>
+  <button class="primary" id="runBtn" onclick="triggerRun()">Run now</button>
+</header>
+
+<main>
+  <div class="layout">
+
+    <!-- ============ settings ============ -->
+    <div class="card" id="settingsCard">
+      <h2>Run configuration</h2>
+
+      <div class="field">
+        <label>Watchlist</label>
+        <input type="text" id="watchlist" placeholder="e.g. BTC, ETH, SOL">
+        <div class="hint">Comma-separated tickers. Empty = let the triage agent pick the shortlist.</div>
+      </div>
+
+      <div class="field">
+        <label>Shortlist size <span class="rangeval" id="shortlistVal"></span></label>
+        <input type="range" id="shortlist" min="3" max="15" step="1">
+        <div class="hint">Coins analyzed in depth (skipped when a watchlist is set).</div>
+      </div>
+
+      <div class="field">
+        <label>Lookback window</label>
+        <div class="seg" id="lookbackSeg"></div>
+      </div>
+
+      <div class="field">
+        <label>Debate depth</label>
+        <div class="seg" id="depthSeg"></div>
+        <div class="segdesc" id="depthDesc"></div>
+      </div>
+
+      <div class="srcgroup">Market</div>
+      <label class="chk"><input type="checkbox" id="src_market"><span>CoinGecko market snapshot</span></label>
+
+      <div class="srcgroup">News (RSS)</div>
+      <div id="feedChecks"></div>
+
+      <div class="srcgroup">Community</div>
+      <label class="chk"><input type="checkbox" id="src_reddit"><span>Reddit (public JSON)</span></label>
+      <label class="chk"><input type="checkbox" id="src_hackernews"><span>Hacker News (fallback)</span></label>
+      <label class="chk"><input type="checkbox" id="src_trending"><span>CoinGecko trending (fallback)</span></label>
+
+      <div style="display:flex; gap:8px; margin-top:16px">
+        <button class="ghost" onclick="resetDefaults()">Reset to defaults</button>
+      </div>
+    </div>
+
+    <!-- ============ results ============ -->
+    <div>
+      <div class="runbar">
+        <select id="runSelect" onchange="loadPicks(this.value)"></select>
+        <button class="ghost" id="detailsBtn" onclick="openTrace()">Run details</button>
+        <span id="status" class="hint"></span>
+      </div>
+
+      <div id="summary" style="display:none"></div>
+
+      <div class="card" style="padding:6px 14px">
+        <table id="picksTable">
+          <thead><tr>
+            <th>#</th><th>Coin</th><th>Score</th><th>Confidence</th>
+            <th>Rationale</th><th>Main risk</th><th>Performance</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="empty" id="noPicks" style="display:none">No picks yet — configure the panel and hit “Run now”.</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<!-- ============ trace modal ============ -->
+<div class="overlay" id="overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="mhead">
+      <h3 id="mTitle">Run details</h3>
+      <div class="spacer"></div>
+      <button class="xbtn" onclick="closeModal()">✕</button>
+    </div>
+    <div class="sub" id="mSub"></div>
+    <div class="steps" id="mSteps"></div>
+    <div id="mBody"></div>
+  </div>
 </div>
 
-<div id="summary" style="display:none"></div>
-<table id="picksTable">
-  <thead><tr>
-    <th>#</th><th>Coin</th><th>Score</th><th>Conf.</th><th>Rationale</th><th>Main risk</th><th>Pick price</th><th>Now</th><th>Return</th>
-  </tr></thead>
-  <tbody></tbody>
-</table>
+<div id="toast"></div>
 
 <script>
+let DEFAULTS = null;
+let currentRunId = null;
+
+/* ---------- settings ---------- */
+function esc(s) { return (s ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function loadDefaults() {
+  DEFAULTS = await (await fetch('/api/defaults')).json();
+  const feedsDiv = document.getElementById('feedChecks');
+  feedsDiv.innerHTML = DEFAULTS.feeds.map(f =>
+    `<label class="chk"><input type="checkbox" class="feedchk" data-feed="${esc(f.name)}" checked><span>${esc(f.name)}</span></label>`).join('');
+  const lbSeg = document.getElementById('lookbackSeg');
+  lbSeg.innerHTML = [3,7,14].map(d => `<button data-d="${d}" class="${d===DEFAULTS.lookback_days?'on':''}">${d}d</button>`).join('');
+  lbSeg.querySelectorAll('button').forEach(b => b.onclick = () => {
+    lbSeg.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+  });
+  const dSeg = document.getElementById('depthSeg');
+  dSeg.innerHTML = Object.keys(DEFAULTS.debate_depths).map(k =>
+    `<button data-k="${k}" class="${k===DEFAULTS.debate_depth?'on':''}">${k[0].toUpperCase()+k.slice(1)}</button>`).join('');
+  dSeg.querySelectorAll('button').forEach(b => b.onclick = () => {
+    dSeg.querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
+    renderDepthDesc();
+  });
+  const sl = document.getElementById('shortlist');
+  sl.value = DEFAULTS.shortlist_size;
+  sl.oninput = () => document.getElementById('shortlistVal').textContent = '(' + sl.value + ')';
+  document.getElementById('shortlistVal').textContent = '(' + DEFAULTS.shortlist_size + ')';
+  renderDepthDesc();
+  const saved = localStorage.getItem('cfa-settings');
+  if (saved) applySettings(JSON.parse(saved));
+}
+
+function renderDepthDesc() {
+  const k = document.querySelector('#depthSeg button.on')?.dataset.k;
+  document.getElementById('depthDesc').textContent = (DEFAULTS.debate_depths[k] || '').split('—')[1]?.trim() || '';
+}
+
+function collectSettings() {
+  const wl = document.getElementById('watchlist').value.split(',').map(s => s.trim()).filter(Boolean);
+  return {
+    watchlist: wl,
+    shortlist_size: +document.getElementById('shortlist').value,
+    lookback_days: +document.querySelector('#lookbackSeg button.on').dataset.d,
+    debate_depth: document.querySelector('#depthSeg button.on').dataset.k,
+    use_market: document.getElementById('src_market').checked,
+    feeds: [...document.querySelectorAll('.feedchk')].filter(c => c.checked).map(c => c.dataset.feed),
+    use_reddit: document.getElementById('src_reddit').checked,
+    use_hackernews: document.getElementById('src_hackernews').checked,
+    use_trending: document.getElementById('src_trending').checked,
+  };
+}
+
+function applySettings(s) {
+  if (!s) return;
+  document.getElementById('watchlist').value = (s.watchlist || []).join(', ');
+  document.getElementById('shortlist').value = s.shortlist_size;
+  document.getElementById('shortlistVal').textContent = '(' + s.shortlist_size + ')';
+  const lb = document.querySelector(`#lookbackSeg button[data-d="${s.lookback_days}"]`);
+  if (lb) { document.querySelectorAll('#lookbackSeg button').forEach(x => x.classList.remove('on')); lb.classList.add('on'); }
+  const dbtn = document.querySelector(`#depthSeg button[data-k="${s.debate_depth}"]`);
+  if (dbtn) { document.querySelectorAll('#depthSeg button').forEach(x => x.classList.remove('on')); dbtn.classList.add('on'); renderDepthDesc(); }
+  document.getElementById('src_market').checked = s.use_market !== false;
+  document.querySelectorAll('.feedchk').forEach(c => c.checked = (s.feeds || []).includes(c.dataset.feed));
+  document.getElementById('src_reddit').checked = s.use_reddit !== false;
+  document.getElementById('src_hackernews').checked = s.use_hackernews !== false;
+  document.getElementById('src_trending').checked = s.use_trending !== false;
+}
+
+function resetDefaults() { localStorage.removeItem('cfa-settings'); location.reload(); }
+
+/* ---------- runs & picks ---------- */
 async function loadRuns() {
   const runs = await (await fetch('/api/runs')).json();
   const sel = document.getElementById('runSelect');
@@ -44,59 +308,189 @@ async function loadRuns() {
   for (const r of runs) {
     const opt = document.createElement('option');
     opt.value = r.id;
-    opt.textContent = `Week ${r.week_start} — run #${r.id} (${r.status})`;
+    opt.textContent = `Week ${r.week_start} · run #${r.id} · ${r.status}`;
     sel.appendChild(opt);
   }
-  if (runs.length) loadPicks(runs[0].id); else { document.getElementById('status').textContent = 'No runs yet — click "Run now".'; }
+  if (runs.length) { currentRunId = runs[0].id; loadPicks(currentRunId); }
+  else document.getElementById('status').textContent = 'No runs yet.';
 }
 
 async function loadPicks(runId) {
+  currentRunId = +runId;
   const picks = await (await fetch(`/api/picks/${runId}`)).json();
   const runs = await (await fetch('/api/runs')).json();
-  const run = runs.find(r => r.id === runId) || {};
+  const run = runs.find(r => r.id === +runId) || {};
   const sum = document.getElementById('summary');
   if (run.summary) { sum.style.display = 'block'; sum.textContent = run.summary; }
+  else sum.style.display = 'none';
   const tbody = document.querySelector('#picksTable tbody');
   tbody.innerHTML = '';
+  document.getElementById('noPicks').style.display = picks.length ? 'none' : 'block';
   for (const p of picks) {
     const ret = p.return_pct;
+    const perf = ret == null
+      ? `<span class="chip mut">pending next run</span>`
+      : `<span class="chip ${ret >= 0 ? 'pos' : 'neg'}">${ret > 0 ? '+' : ''}${ret}%</span>`;
     tbody.insertAdjacentHTML('beforeend', `<tr>
-      <td>${p.rank}</td><td><b>${p.symbol}</b> <span class="muted">${p.coin}</span></td>
-      <td>${p.score}</td><td>${p.confidence}</td>
-      <td>${p.rationale}</td><td>${p.risks}</td>
-      <td>${p.price_at_pick ?? '—'}</td><td>${p.price_latest ?? '—'}</td>
-      <td class="${ret == null ? 'muted' : ret >= 0 ? 'pos' : 'neg'}">${ret == null ? '—' : ret + '%'}</td>
+      <td>${p.rank}</td>
+      <td><div class="sym">${esc(p.symbol)}</div><div class="coinname">${esc(p.coin)}</div></td>
+      <td><span class="scorebar"><i style="width:${p.score * 10}%"></i></span>${p.score}/10</td>
+      <td>${Math.round(p.confidence * 100)}%</td>
+      <td class="rationale" title="${esc(p.rationale)}">${esc(p.rationale.length > 220 ? p.rationale.slice(0, 220) + '…' : p.rationale)}</td>
+      <td class="rationale" title="${esc(p.risks)}">${esc(p.risks.length > 160 ? p.risks.slice(0, 160) + '…' : p.risks)}</td>
+      <td>${p.price_at_pick ? '$' + p.price_at_pick : '—'} ${perf}</td>
     </tr>`);
   }
 }
 
+/* ---------- run trigger ---------- */
 async function triggerRun() {
+  const settings = collectSettings();
+  localStorage.setItem('cfa-settings', JSON.stringify(settings));
   const btn = document.getElementById('runBtn');
   btn.disabled = true;
-  const resp = await fetch('/api/run', { method: 'POST' });
+  const resp = await fetch('/api/run', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(settings),
+  });
   if (resp.ok) {
-    document.getElementById('status').textContent = 'Run started — this takes several minutes (data fetch + LLM passes).';
+    toast('Run started — watch the status pill.');
+    document.getElementById('statusPill').className = 'pill running';
+    document.getElementById('statusPill').textContent = 'running';
     pollStatus();
   } else {
-    document.getElementById('status').textContent = (await resp.json()).detail || 'Could not start run';
+    toast((await resp.json()).detail || 'Could not start run');
     btn.disabled = false;
   }
 }
 
-async function pollStatus() {
+function pollStatus() {
   const timer = setInterval(async () => {
     const s = await (await fetch('/api/status')).json();
     if (!s.run_in_progress) {
       clearInterval(timer);
       document.getElementById('runBtn').disabled = false;
-      document.getElementById('status').textContent = 'Run finished.';
+      setPillIdle();
       loadRuns();
     }
   }, 5000);
 }
 
-document.getElementById('runSelect').addEventListener('change', e => loadPicks(e.target.value));
-loadRuns();
+function setPillIdle() {
+  const p = document.getElementById('statusPill');
+  p.className = 'pill idle'; p.textContent = 'idle';
+}
+
+/* ---------- trace modal ---------- */
+async function openTrace() {
+  if (!currentRunId) { toast('No run selected'); return; }
+  const resp = await fetch(`/api/runs/${currentRunId}/trace`);
+  if (!resp.ok) { toast('No trace recorded for this run'); return; }
+  renderTrace(await resp.json());
+  document.getElementById('overlay').classList.add('open');
+  document.getElementById('mTitle').textContent = `Run #${currentRunId} details`;
+}
+function closeModal() { document.getElementById('overlay').classList.remove('open'); }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+function renderTrace(trace) {
+  const runsPromise = fetch('/api/runs').then(r => r.json());
+  const steps = trace.steps || [];
+  const S = Object.fromEntries(steps.map(s => [s.step, s]));
+
+  // timeline chips
+  const chips = [];
+  const chip = (name, s, cls, extra='') => chips.push(
+    `<div class="stepchip ${cls}"><b>${name}</b>${extra}${s?.duration_s != null ? `<span class="dur">${s.duration_s}s</span>` : ''}</div>`);
+  chip('Ingest', S.ingest, (S.ingest?.sources || []).every(x => x.ok !== false) ? 'ok' : 'bad',
+       ` · ${(S.ingest?.sources || []).filter(x => x.ok).length}/${(S.ingest?.sources || []).length}`);
+  if (S.triage) chip('Triage (' + S.triage.mode + ')', S.triage, 'ok', ` · ${S.triage.shortlist?.length ?? 0}`);
+  chip('Analysis', S.analyze, (S.analyze?.errors || []).length ? 'bad' : 'ok', ` · ${S.analyze?.reports?.length ?? 0} reports`);
+  chip('Debate (' + (S.debate?.depth || '?') + ')', S.debate, S.debate?.error ? 'bad' : 'ok', ` · ${S.debate?.turns?.length ?? 0} turns`);
+  chip('Validate', S.validate, S.validate?.status === 'fallback' ? 'bad' : 'ok', S.validate ? ` · ${S.validate.status}` : '');
+  chip('Rank', S.rank, 'ok', S.rank ? ` · ${S.rank.n_saved} picks` : '');
+  document.getElementById('mSteps').innerHTML = chips.join('');
+
+  let html = '';
+
+  // 1. gathered data
+  const ing = S.ingest;
+  if (ing) {
+    const rows = (ing.sources || []).map(src => {
+      const tag = src.ok === true ? '<span class="tag ok">ok</span>'
+                : src.ok === false ? '<span class="tag fail">failed</span>'
+                : '<span class="tag skip">skipped</span>';
+      return `<div class="srcrow"><b>${esc(src.name)}</b> ${tag} <span class="cnt" style="color:var(--muted);font-size:.74rem">${src.count ?? ''} items</span>
+        ${src.url ? `<div class="u"><a href="${esc(src.url)}" target="_blank">${esc(src.url)}</a></div>` : ''}</div>`;
+    }).join('');
+    const c = ing.counts || {};
+    html += `<details open><summary>Data gathered <span class="cnt">· ${c.market_coins ?? 0} coins, ${c.news_items ?? 0} news, ${c.community_posts ?? 0} posts</span></summary>
+      <div class="dbody">${rows}</div></details>`;
+  }
+
+  // 2. shortlist
+  if (S.triage) {
+    const rows = (S.triage.shortlist || []).map(s =>
+      `<div class="srcrow"><b>${esc(s.symbol)}</b> — ${esc(s.coin)} <span style="color:var(--muted)">· ${esc(s.reason)}</span></div>`).join('');
+    html += `<details><summary>Shortlist <span class="cnt">· ${S.triage.mode}</span></summary><div class="dbody">${rows}</div></details>`;
+  }
+
+  // 3. per-coin reports
+  if (S.analyze) {
+    const reps = (S.analyze.reports || []).map(r => `<div class="repcard">
+      <div class="hd"><b>${esc(r.symbol)}</b><span class="coinname">${esc(r.coin)}</span>
+        <span class="chip mut">score ${r.score}/10</span><span class="chip mut">conf ${Math.round(r.confidence * 100)}%</span></div>
+      <div class="kv"><b>Fundamentals:</b> ${esc(r.fundamentals)}</div>
+      <div class="kv"><b>Sentiment:</b> ${esc(r.sentiment)}</div>
+      <div class="kv"><b>Signals:</b> ${esc(r.signals)}</div>
+    </div>`).join('');
+    const errs = (S.analyze.errors || []).map(e => `<div class="errline">${esc(e)}</div>`).join('');
+    html += `<details><summary>Analyst reports <span class="cnt">· ${S.analyze.reports?.length ?? 0}</span></summary>
+      <div class="dbody">${reps}${errs}</div></details>`;
+  }
+
+  // 4. debate transcript
+  if (S.debate) {
+    const turns = (S.debate.turns || []).map(t =>
+      `<div class="bubble"><span class="who">${esc(t.agent)}</span>${esc(t.text)}</div>`).join('')
+      + (S.debate.error ? `<div class="errline">${esc(S.debate.error)}</div>` : '');
+    html += `<details><summary>Debate transcript <span class="cnt">· ${S.debate.depth} · ${S.debate.turns?.length ?? 0} turns</span></summary>
+      <div class="dbody">${turns}</div></details>`;
+  }
+
+  // 5. validation
+  if (S.validate) {
+    html += `<details><summary>Validation <span class="cnt">· ${S.validate.status} · ${S.validate.n_picks} picks</span></summary>
+      <div class="dbody"><div class="kv">${esc(S.validate.summary || '')}</div>
+      ${S.validate.status === 'fallback' ? '<div class="errline">Crew output failed schema validation — ranking was derived from per-coin reports instead.</div>' : ''}</div></details>`;
+  }
+
+  // 6. settings used
+  if (S.rank?.settings) {
+    const st = S.rank.settings;
+    html += `<details><summary>Run settings</summary><div class="dbody">
+      <div class="kv"><b>Watchlist:</b> ${st.watchlist?.length ? esc(st.watchlist.join(', ')) : 'auto (LLM triage)'}</div>
+      <div class="kv"><b>Shortlist size:</b> ${st.shortlist_size} · <b>Lookback:</b> ${st.lookback_days}d · <b>Debate:</b> ${esc(st.debate_depth)}</div>
+      <div class="kv"><b>Sources:</b> ${st.use_market ? 'market ✓' : 'market ✗'} · feeds: ${esc((st.feeds || []).join(', ') || 'none')} ·
+        reddit ${st.use_reddit ? '✓' : '✗'} / HN ${st.use_hackernews ? '✓' : '✗'} / trending ${st.use_trending ? '✓' : '✗'}</div>
+    </div></details>`;
+  }
+
+  document.getElementById('mBody').innerHTML = html;
+}
+
+/* ---------- misc ---------- */
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3200);
+}
+
+(async function init() {
+  await loadDefaults();
+  setPillIdle();
+  loadRuns();
+})();
 </script>
 </body>
 </html>

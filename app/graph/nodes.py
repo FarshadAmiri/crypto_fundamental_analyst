@@ -1,5 +1,9 @@
-"""Graph nodes: deterministic ingest via MCP tools, LLM triage, parallel per-coin analysis."""
-import json
+"""Graph nodes: deterministic ingest via MCP tools, LLM triage, parallel per-coin analysis.
+
+Every node emits trace events (gathered sources, shortlist, reports, timings) that the
+UI replays in the run-details modal.
+"""
+import time
 from typing import Any
 
 from fastmcp import Client
@@ -19,21 +23,47 @@ async def _call_mcp_tool(client: Client, name: str, arguments: dict | None = Non
     return [c.model_dump() for c in result.content]
 
 
-async def _safe_mcp_tool(client: Client, name: str) -> Any:
+async def _safe_mcp_tool(client: Client, name: str, arguments: dict | None = None) -> Any:
     """A dead data source degrades to an empty bundle; it must not kill the whole run."""
     try:
-        return await _call_mcp_tool(client, name)
+        return await _call_mcp_tool(client, name, arguments)
     except Exception as e:
-        return {"error": f"tool {name} failed: {e}", "items": [], "posts": [], "coins": []}
+        return {"error": f"tool {name} failed: {e}", "items": [], "posts": [], "coins": [], "sources": []}
 
 
 async def ingest(state: dict) -> dict:
-    """Gather ALL data up front through the MCP server. Downstream agents never browse."""
+    """Gather ALL data up front through the MCP server, honoring the run's source selection."""
+    t0 = time.monotonic()
+    s = state["settings"]
     async with Client(config.MCP_URL) as client:
-        market = await _safe_mcp_tool(client, "get_market_snapshot")
-        news = await _safe_mcp_tool(client, "get_news_headlines")
-        sentiment = await _safe_mcp_tool(client, "get_community_sentiment")
-    return {"market": market or {}, "news": news or {}, "sentiment": sentiment or {}}
+        if s["use_market"]:
+            market = await _safe_mcp_tool(client, "get_market_snapshot")
+        else:
+            market = {"coins": [], "sources": [{"name": "CoinGecko markets", "ok": None, "count": 0}]}
+        news = await _safe_mcp_tool(
+            client, "get_news_headlines", {"feeds": s["feeds"] or None, "days": s["lookback_days"]}
+        )
+        sentiment = await _safe_mcp_tool(
+            client,
+            "get_community_sentiment",
+            {"reddit": s["use_reddit"], "hackernews": s["use_hackernews"],
+             "trending": s["use_trending"], "days": s["lookback_days"]},
+        )
+
+    sources = []
+    for bundle in (market, news, sentiment):
+        sources.extend(bundle.get("sources") or [])
+    event = {
+        "step": "ingest",
+        "duration_s": round(time.monotonic() - t0, 1),
+        "sources": sources,
+        "counts": {
+            "news_items": len(news.get("items") or []),
+            "community_posts": len(sentiment.get("posts") or []),
+            "market_coins": len(market.get("coins") or []),
+        },
+    }
+    return {"market": market or {}, "news": news or {}, "sentiment": sentiment or {}, "trace": [event]}
 
 
 def _compact_news(news: dict, limit: int = 40) -> str:
@@ -62,42 +92,6 @@ def _compact_market(market: dict, limit: int = 25) -> str:
         for c in coins[:limit]
     ]
     return "\n".join(lines) or "(no market data)"
-
-
-async def triage(state: dict) -> dict:
-    """One cheap LLM pass over the fetched evidence: build the week's shortlist. No tools."""
-    evidence = (
-        "MARKET SNAPSHOT:\n"
-        + _compact_market(state["market"])
-        + "\n\nNEWS HEADLINES (last 7 days):\n"
-        + _compact_news(state["news"])
-        + "\n\nCOMMUNITY POSTS (top by upvotes):\n"
-        + _compact_sentiment(state["sentiment"])
-    )
-    llm = chat_llm().with_structured_output(TriageResult)
-    result = await llm.ainvoke(
-        [
-            (
-                "system",
-                "You are a crypto research triage analyst. From the evidence below, pick the "
-                f"{config.SHORTLIST_SIZE} coins most worth deep analysis this week. Favor coins with "
-                "concrete catalysts (news, funding, upgrades, strong momentum) over stale mega-caps. "
-                "Never invent data that is not in the evidence.",
-            ),
-            ("user", evidence),
-        ]
-    )
-    shortlist = []
-    for c in result.coins[: config.SHORTLIST_SIZE]:
-        shortlist.append(
-            {
-                "coin": c.coin,
-                "symbol": c.symbol.upper(),
-                "reason": c.reason,
-                "evidence": _coin_evidence(c.symbol.upper(), c.coin, state),
-            }
-        )
-    return {"shortlist": shortlist}
 
 
 def _coin_evidence(symbol: str, coin: str, state: dict) -> str:
@@ -146,10 +140,61 @@ def _coin_evidence(symbol: str, coin: str, state: dict) -> str:
     return "\n\n".join(parts)
 
 
+def _shortlist_entry(symbol: str, reason: str, state: dict) -> dict:
+    name = symbol
+    for c in (state.get("market") or {}).get("coins", []):
+        if c.get("symbol") == symbol:
+            name = c.get("name") or symbol
+            break
+    return {"coin": name, "symbol": symbol, "reason": reason, "evidence": _coin_evidence(symbol, name, state)}
+
+
+async def triage(state: dict) -> dict:
+    """Build the week's shortlist: from the user's watchlist if given, else one cheap LLM pass. No tools."""
+    t0 = time.monotonic()
+    watchlist = state["settings"]["watchlist"]
+    if watchlist:
+        shortlist = [_shortlist_entry(sym, "user watchlist", state) for sym in watchlist]
+        event = {"step": "triage", "mode": "watchlist", "duration_s": round(time.monotonic() - t0, 1),
+                 "shortlist": [{k: s[k] for k in ("coin", "symbol", "reason")} for s in shortlist]}
+        return {"shortlist": shortlist, "trace": [event]}
+
+    evidence = (
+        "MARKET SNAPSHOT:\n"
+        + _compact_market(state["market"])
+        + "\n\nNEWS HEADLINES (last 7 days):\n"
+        + _compact_news(state["news"])
+        + "\n\nCOMMUNITY POSTS (top by upvotes):\n"
+        + _compact_sentiment(state["sentiment"])
+    )
+    llm = chat_llm().with_structured_output(TriageResult)
+    result = await llm.ainvoke(
+        [
+            (
+                "system",
+                "You are a crypto research triage analyst. From the evidence below, pick the "
+                f"{state['settings']['shortlist_size']} coins most worth deep analysis this week. Favor coins with "
+                "concrete catalysts (news, funding, upgrades, strong momentum) over stale mega-caps. "
+                "Never invent data that is not in the evidence.",
+            ),
+            ("user", evidence),
+        ]
+    )
+    shortlist = [
+        _shortlist_entry(c.symbol.upper(), c.reason, state)
+        for c in result.coins[: state["settings"]["shortlist_size"]]
+    ]
+    event = {"step": "triage", "mode": "auto", "duration_s": round(time.monotonic() - t0, 1),
+             "shortlist": [{k: s[k] for k in ("coin", "symbol", "reason")} for s in shortlist]}
+    return {"shortlist": shortlist, "trace": [event]}
+
+
 async def analyze(payload: dict) -> dict:
     """One lightweight agent per coin. Reads the pre-fetched evidence; no live tool calls."""
-    llm = chat_llm().with_structured_output(CoinReport)
+    t0 = time.monotonic()
+    symbol = payload.get("symbol", "?")
     try:
+        llm = chat_llm().with_structured_output(CoinReport)
         report = await llm.ainvoke(
             [
                 (
@@ -163,10 +208,22 @@ async def analyze(payload: dict) -> dict:
                 ("user", payload["evidence"]),
             ]
         )
-        return {"reports": [report.model_dump()]}
+        r = report.model_dump()
+        return {
+            "reports": [r],
+            "trace": [{
+                "step": "analyze", "symbol": symbol,
+                "duration_s": round(time.monotonic() - t0, 1),
+                "report": r,
+            }],
+        }
     except Exception as e:
         # skip this coin rather than failing the whole week
-        return {"reports": [], "_analysis_errors": [f"{payload.get('symbol')}: {e}"]}
+        return {
+            "reports": [],
+            "trace": [{"step": "analyze", "symbol": symbol, "error": f"{e}",
+                       "duration_s": round(time.monotonic() - t0, 1)}],
+        }
 
 
 def fan_out_analyses(state: dict) -> list[Send]:

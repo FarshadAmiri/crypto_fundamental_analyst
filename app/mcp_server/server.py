@@ -16,15 +16,17 @@ async def get_market_snapshot() -> dict:
 
 
 @mcp.tool
-async def get_news_headlines() -> dict:
-    """Crypto news headlines from public RSS feeds within the last 7 days (title + short summary)."""
-    return await sources.fetch_news_headlines()
+async def get_news_headlines(feeds: list[str] | None = None, days: int | None = None) -> dict:
+    """Crypto news headlines from selected RSS feeds (by name) within the lookback window. Omit args for all feeds / default window."""
+    return await sources.fetch_news_headlines(feeds, days)
 
 
 @mcp.tool
-async def get_community_sentiment() -> dict:
-    """Hot posts from public crypto subreddits: title, upvotes, comment count. Public JSON, no auth."""
-    return await sources.fetch_community_sentiment()
+async def get_community_sentiment(
+    reddit: bool = True, hackernews: bool = True, trending: bool = True, days: int | None = None
+) -> dict:
+    """Community posts from the enabled public sources (tried in order: Reddit, HackerNews, CoinGecko trending)."""
+    return await sources.fetch_community_sentiment(reddit, hackernews, trending, days)
 
 
 @mcp.tool

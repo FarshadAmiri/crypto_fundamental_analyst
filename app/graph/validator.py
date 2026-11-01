@@ -32,15 +32,15 @@ validator_agent = Agent(
 )
 
 
-async def validate_verdict(debate_text: str, week_start: str, fallback_reports: list[dict]) -> WeeklyVerdict:
-    """Try to validate the crew output; on failure, synthesize a verdict from per-coin reports."""
+async def validate_verdict(debate_text: str, week_start: str, fallback_reports: list[dict]) -> tuple[WeeklyVerdict, str]:
+    """Validate the crew output; on failure, synthesize from per-coin reports. Returns (verdict, status)."""
     try:
         result = await validator_agent.run(
             f"week_start: {week_start}\n\nDEBATE TRANSCRIPT:\n{debate_text}"
         )
         verdict = result.output
         if verdict.picks:
-            return verdict
+            return verdict, "validated"
     except Exception:
         pass
 
@@ -66,4 +66,4 @@ async def validate_verdict(debate_text: str, week_start: str, fallback_reports: 
             for i, r in enumerate(ranked)
         ],
         summary="Fallback ranking derived from per-coin analyst reports (crew output failed validation).",
-    )
+    ), "fallback"

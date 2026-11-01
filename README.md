@@ -15,6 +15,19 @@ Three frameworks, three jobs — glued together by LangGraph:
 
 All three frameworks talk to the same vLLM endpoint (OpenAI-compatible). "Different models" in the debate = different personas, not different LLMs.
 
+## The process, step by step
+
+Once a week (or when you click **Run now**), the pipeline does this, in order:
+
+1. **Gather data** — fetches market prices, news headlines and community posts from the internet. *Tool: MCP tools served by fastmcp (data fetched with httpx and feedparser).*
+2. **Triage** — one cheap LLM call reads everything gathered and picks ~8 coins worth analyzing. *Tool: LangChain's ChatOpenAI (pointed at vLLM), structured output.*
+3. **Analyze each coin** — one small agent per coin writes a mini-report (fundamentals, sentiment, signals, score). All coins run in parallel, and each agent only reads the already-fetched data. *Tool: LangGraph (parallel fan-out) + ChatOpenAI.*
+4. **Debate** — three CrewAI personas (bull, bear, quant) discuss the reports: bull makes a case, bear attacks it, quant synthesizes a final ranking. *Tool: CrewAI.*
+5. **Validate** — the crew's free-text answer is forced into a strict typed verdict (ranks, scores, risks). If it doesn't fit the schema, it retries; if it still fails, a fallback ranking is built from step 3. *Tool: Pydantic AI.*
+6. **Save & track** — the final picks are stored in the database with their current price; on the next run, last week's picks get their return % filled in. *Tool: SQLite.*
+
+The orchestrator that runs steps 1→6 in order, passes data between them and handles failures is **LangGraph**. Steps 1–6 all use the same local LLM through vLLM's OpenAI-compatible API.
+
 ## Workflow schema
 
 ```mermaid
@@ -86,6 +99,29 @@ Prereqs: Docker, and a vLLM server serving an instruct model that supports tool 
 3. Open http://localhost:8000 → **Run now**. Weekly runs happen automatically (Monday 06:00, configurable in `.env`).
 
 A fully dockerized vLLM also exists as an optional profile: `docker compose --profile docker-gpu up -d vllm`.
+
+## Customizing a run
+
+The left panel controls what each run does (saved in your browser, defaults in `.env`):
+
+- **Watchlist** — comma-separated tickers (e.g. `BTC, ETH, SOL`). Empty = the triage agent picks the shortlist itself.
+- **Shortlist size** — how many coins get deep analysis (auto mode).
+- **Lookback window** — 3/7/14 days of news and community posts.
+- **Debate depth** — `quick` (2 LLM turns), `standard` (3), `extended` (4).
+- **Data sources** — tick market snapshot, individual RSS feeds, and community sources (Reddit → HackerNews → CoinGecko trending, tried in that order with automatic fallback).
+
+## Observability (run details)
+
+Every run records a full trace. The **Run details** button in the UI opens a modal showing:
+
+- each pipeline step with its duration and ok/fail status,
+- every data source attempted, with its URL, item count and success flag,
+- the shortlist (and whether it came from your watchlist or the LLM),
+- each per-coin analyst report,
+- the **complete crew debate transcript**, turn by turn with agent roles,
+- whether Pydantic AI validated the crew output or the fallback ranking was used.
+
+Same data over the API: `GET /api/runs/{id}/trace`.
 
 ## Notes / gotchas
 

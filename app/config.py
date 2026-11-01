@@ -19,6 +19,12 @@ CACHE_TTL_HOURS = float(os.getenv("CACHE_TTL_HOURS", "6"))
 LOOKBACK_DAYS = int(os.getenv("LOOKBACK_DAYS", "7"))
 SHORTLIST_SIZE = int(os.getenv("SHORTLIST_SIZE", "8"))
 
+# --- Run customization defaults (overridable per run from the UI) ---
+# Comma-separated symbols; empty = let the triage LLM pick the shortlist
+DEFAULT_WATCHLIST = [s.strip().upper() for s in os.getenv("DEFAULT_WATCHLIST", "").split(",") if s.strip()]
+# quick (2 LLM turns) | standard (3) | extended (4)
+DEFAULT_DEBATE_DEPTH = os.getenv("DEBATE_DEPTH", "standard")
+
 # --- Storage / app ---
 DB_PATH = os.getenv("DB_PATH", "/data/app.db")
 

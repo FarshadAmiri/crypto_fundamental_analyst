@@ -1,8 +1,11 @@
-"""CrewAI debate node: three personas (bull, bear, quant) discuss the shortlist and propose a ranking.
+"""CrewAI debate node: bull/bear/quant personas discuss the shortlist and propose a ranking.
 
 All agents share the same local vLLM endpoint — the diversity comes from roles, not models.
-Kept deliberately small: 3 tasks total, tools disabled, output is raw text that the
-Pydantic AI validator turns into a typed WeeklyVerdict.
+`depth` controls how many conversation turns run before the quant synthesizes:
+  quick     = bull case → synthesis            (2 LLM calls)
+  standard  = bull → bear rebuttal → synth     (3 calls, default)
+  extended  = bull → bear → bull counter → synth (4 calls)
+Every turn is captured so the UI can replay the whole conversation.
 """
 import asyncio
 
@@ -37,7 +40,11 @@ def _crew_llm() -> LLM:
     )
 
 
-def run_debate_sync(shortlist: list[dict], reports: list[dict]) -> str:
+def _task(description: str, expected: str, agent: Agent, context: list[Task] | None = None) -> Task:
+    return Task(description=description, expected_output=expected, agent=agent, context=context)
+
+
+def run_debate_sync(shortlist: list[dict], reports: list[dict], depth: str = "standard") -> tuple[str, list[dict]]:
     context = _build_debate_context(shortlist, reports)
     llm = _crew_llm()
 
@@ -66,48 +73,96 @@ def run_debate_sync(shortlist: list[dict], reports: list[dict]) -> str:
         allow_delegation=False,
     )
 
-    task_bull = Task(
+    task_bull = _task(
         description=(
             "Below is this week's shortlist and per-coin analyst reports.\n\n"
             f"{context}\n\n"
             "Pick the 3-5 coins with the best expected upside for the coming week and argue why, "
             "based strictly on the evidence above."
         ),
-        expected_output="A bulleted bull case for 3-5 coins, each with a 0-10 score.",
+        expected="A bulleted bull case for 3-5 coins, each with a 0-10 score.",
         agent=bull,
     )
-    task_bear = Task(
-        description=(
-            "Review the bull case above. For each proposed coin, state the main risk or the weakest "
-            "part of the evidence, and flag any coin that should be dropped."
-        ),
-        expected_output="A bulleted bear rebuttal: risks per coin, plus coins to drop.",
-        agent=bear,
-        context=[task_bull],
-    )
-    task_final = Task(
-        description=(
-            "Synthesize the bull case and the bear rebuttal into ONE final ranking of the 3-5 best "
-            "coins for next week. For each: score 0-10, confidence 0-1, one-paragraph rationale, "
-            "and the main risk. End with a one-paragraph overall market summary."
-        ),
-        expected_output=(
-            "A numbered ranking (rank. SYMBOL — score X/10 — confidence Y — rationale — main risk), "
-            "followed by 'SUMMARY:' and a one-paragraph market summary."
-        ),
-        agent=quant,
-        context=[task_bull, task_bear],
-    )
+
+    if depth == "quick":
+        tasks = [
+            task_bull,
+            _task(
+                description=(
+                    "You are given the shortlist, per-coin reports and a bull case (see context). "
+                    "Produce ONE final ranking of the 3-5 best coins for next week, acting as your "
+                    "own devil's advocate: for each coin state score 0-10, confidence 0-1, "
+                    "one-paragraph rationale and the main risk. End with 'SUMMARY:' and a "
+                    "one-paragraph market summary."
+                ),
+                expected=(
+                    "A numbered ranking (rank. SYMBOL — score X/10 — confidence Y — rationale — main risk), "
+                    "followed by 'SUMMARY:' and a one-paragraph market summary."
+                ),
+                agent=quant,
+                context=[task_bull],
+            ),
+        ]
+    else:
+        task_bear = _task(
+            description=(
+                "Review the bull case above. For each proposed coin, state the main risk or the weakest "
+                "part of the evidence, and flag any coin that should be dropped."
+            ),
+            expected="A bulleted bear rebuttal: risks per coin, plus coins to drop.",
+            agent=bear,
+            context=[task_bull],
+        )
+        tasks = [task_bull, task_bear]
+        final_context = [task_bull, task_bear]
+
+        if depth == "extended":
+            task_counter = _task(
+                description=(
+                    "Rebut the bear case: for each flagged risk, either concede the point and demote the "
+                    "coin, or counter it with evidence from the shortlist context. Output the surviving "
+                    "candidate list."
+                ),
+                expected="A bulleted rebuttal per coin: concede/counter, ending with a surviving candidates list.",
+                agent=bull,
+                context=[task_bull, task_bear],
+            )
+            tasks.append(task_counter)
+            final_context.append(task_counter)
+
+        tasks.append(_task(
+            description=(
+                "Synthesize the debate above into ONE final ranking of the 3-5 best coins for next week. "
+                "For each: score 0-10, confidence 0-1, one-paragraph rationale, and the main risk. "
+                "End with 'SUMMARY:' and a one-paragraph overall market summary."
+            ),
+            expected=(
+                "A numbered ranking (rank. SYMBOL — score X/10 — confidence Y — rationale — main risk), "
+                "followed by 'SUMMARY:' and a one-paragraph market summary."
+            ),
+            agent=quant,
+            context=final_context,
+        ))
 
     crew = Crew(
         agents=[bull, bear, quant],
-        tasks=[task_bull, task_bear, task_final],
+        tasks=tasks,
         process=Process.sequential,
         verbose=False,
     )
-    return str(crew.kickoff())
+    out = crew.kickoff()
+
+    # map each task's output to its agent role (tasks_output doesn't always carry the agent)
+    turns = []
+    task_outputs = list(getattr(out, "tasks_output", []) or [])
+    for task, t in zip(tasks, task_outputs):
+        agent_role = getattr(getattr(task, "agent", None), "role", None) or "Agent"
+        turns.append({"agent": agent_role, "text": getattr(t, "raw", "") or ""})
+    if not turns:
+        turns = [{"agent": "Crew (final output)", "text": str(out)}]
+    return str(out), turns
 
 
-async def run_debate(shortlist: list[dict], reports: list[dict]) -> str:
+async def run_debate(shortlist: list[dict], reports: list[dict], depth: str = "standard") -> tuple[str, list[dict]]:
     """CrewAI's kickoff is blocking; run it in a thread so the graph stays async."""
-    return await asyncio.to_thread(run_debate_sync, shortlist, reports)
+    return await asyncio.to_thread(run_debate_sync, shortlist, reports, depth)

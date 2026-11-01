@@ -46,6 +46,24 @@ def index():
     return FileResponse("web/index.html")
 
 
+@app.get("/api/defaults")
+def defaults():
+    """What the settings panel renders on first load."""
+    return {
+        "feeds": [{"name": name, "url": url} for name, url in config.NEWS_FEEDS],
+        "sentiment_sources": ["reddit", "hackernews", "trending"],
+        "watchlist": config.DEFAULT_WATCHLIST,
+        "shortlist_size": config.SHORTLIST_SIZE,
+        "lookback_days": config.LOOKBACK_DAYS,
+        "debate_depth": config.DEFAULT_DEBATE_DEPTH,
+        "debate_depths": {
+            "quick": "Quick — bull case + synthesis (2 LLM turns)",
+            "standard": "Standard — bull → bear → synthesis (3 turns)",
+            "extended": "Extended — bull → bear → counter → synthesis (4 turns)",
+        },
+    }
+
+
 @app.get("/api/picks/{run_id}")
 def picks(run_id: int):
     return db.get_picks(run_id)
@@ -54,6 +72,14 @@ def picks(run_id: int):
 @app.get("/api/runs")
 def runs():
     return db.list_runs()
+
+
+@app.get("/api/runs/{run_id}/trace")
+def run_trace(run_id: int):
+    trace = db.get_trace(run_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail="No trace recorded for this run")
+    return trace
 
 
 @app.get("/api/latest")
@@ -70,18 +96,18 @@ def status():
 
 
 @app.post("/api/run")
-async def trigger_run(background_tasks: BackgroundTasks):
+async def trigger_run(background_tasks: BackgroundTasks, settings: dict | None = None):
     if db.is_run_in_progress():
         raise HTTPException(status_code=409, detail="A run is already in progress")
-    background_tasks.add_task(_guarded_run)
+    background_tasks.add_task(_guarded_run, settings)
     return {"started": True}
 
 
-async def _guarded_run():
+async def _guarded_run(settings: dict | None = None):
     if db.is_run_in_progress():
         return
     async with _run_lock:
         try:
-            await run_pipeline()
+            await run_pipeline(settings)
         except Exception:
             pass  # failure already recorded on the run row
