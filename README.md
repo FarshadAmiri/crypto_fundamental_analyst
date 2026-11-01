@@ -1,4 +1,4 @@
-# crypto_fundamental_analyst
+# Agentic Crypto Research Analyst
 
 An agentic fundamental analyst for cryptocurrency — weekly picks elected by a local LLM pipeline.
 
